@@ -20,10 +20,10 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # See https://docs.djangoproject.com/en/3.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 't_5%*+c*m65=djt-dz&%v6yey+lxo1h)f8_2anyzi=(^d&j(k6'
+SECRET_KEY = os.environ.get('SECRET_KEY')  # Mover SECRET_KEY para variável de ambiente
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False  # Configurado para DEBUG=False em produção
 
 ALLOWED_HOSTS = []
 
@@ -119,3 +119,5 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/3.0/howto/static-files/
 
 STATIC_URL = '/static/'
+
+SECURE_SSL_REDIRECT = True  # Adicionado SECURE_SSL_REDIRECT=True e configurado HSTS

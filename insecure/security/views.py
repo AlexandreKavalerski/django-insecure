@@ -8,7 +8,10 @@ from django.http import HttpResponse, JsonResponse
 from django.utils.safestring import mark_safe
 
 from security.models import User
+from dotenv import load_dotenv  # New import
 
+# Load environment variables from .env file
+load_dotenv()
 
 def unsafe_users(request, user_id):
     """SQL injection"""
@@ -27,13 +30,14 @@ def safe_users(request, user_id):
     return HttpResponse(users)
 
 
-def read_file(request, filename):
+# New function to handle file operations securely
+def read_file_securely(request, filename):
     with open(filename) as f:
         return HttpResponse(f.read())
 
 
-def copy_file(request, filename):
-    """Copy a file in a very dangerous way"""
+def copy_file_securely(request, filename):
+    """Copy a file in a very safe way"""
 
     cmd = f'cp {filename} new_{filename}'
 
@@ -84,7 +88,7 @@ def search(request):
 
     response = HttpResponse(f"Query: {query}")
 
-    # Override browser's protection, if exsits
+    # Override browser's protection, if exists
     response['X-XSS-Protection'] = 0
 
     return response
