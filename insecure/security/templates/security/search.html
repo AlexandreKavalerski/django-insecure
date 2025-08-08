@@ -1,0 +1,15 @@
+<!-- insecure/security/templates/security/search.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Search Results</title>
+</head>
+<body>
+    <h1>Search Results</h1>
+    {% if query %}
+        <p>You searched for: {{ query }}</p>
+    {% else %}
+        <p>Please enter a search query.</p>
+    {% endif %}
+</body>
+</html>
