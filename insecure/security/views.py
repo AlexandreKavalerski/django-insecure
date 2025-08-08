@@ -84,7 +84,7 @@ def search(request):
 
     response = HttpResponse(f"Query: {query}")
 
-    # Override browser's protection, if exsits
+    # Override browser's protection, if exists
     response['X-XSS-Protection'] = 0
 
     return response
