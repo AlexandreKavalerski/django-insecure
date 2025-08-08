@@ -1,98 +1,107 @@
 import json
 import os
-import pickle
-from dataclasses import dataclass
-import base64
-
-from django.http import HttpResponse, JsonResponse
-from django.utils.safestring import mark_safe
+import jwt
+from django.conf import settings
+from django.http import HttpResponse, JsonResponse, HttpResponseForbidden
+from django.views.decorators.csrf import csrf_protect
+from django.views.decorators.http import require_http_methods
+from django.utils.html import escape
+from django.core.exceptions import ValidationError
 
 from security.models import User
+from security.forms import UserSearchForm, SearchForm
 
 
-def unsafe_users(request, user_id):
-    """SQL injection"""
+@csrf_protect
+@require_http_methods(["GET"])
+def get_user(request, user_id):
+    """Secure way to get user by ID using Django ORM"""
+    form = UserSearchForm({'user_id': user_id})
+    
+    if not form.is_valid():
+        return JsonResponse({'error': 'Invalid user ID'}, status=400)
+    
+    try:
+        user = User.objects.get(id=form.cleaned_data['user_id'])
+        return JsonResponse({
+            'id': user.id,
+            'username': user.username,
+            # Add other safe fields as needed
+        })
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'User not found'}, status=404)
 
-    users = User.objects.raw(f'SELECT * FROM security_user WHERE id = {user_id}')
-
-    return HttpResponse(users)
-
-
-# http://127.0.0.1:8000/security/safe/users/1
-def safe_users(request, user_id):
-    """Uses parameterised query so it's fine"""
-
-    users = User.objects.raw('SELECT * FROM security_user WHERE id = %s', (user_id,))
-
-    return HttpResponse(users)
-
-
-def read_file(request, filename):
-    with open(filename) as f:
-        return HttpResponse(f.read())
-
-
-def copy_file(request, filename):
-    """Copy a file in a very dangerous way"""
-
-    cmd = f'cp {filename} new_{filename}'
-
-    os.system(cmd)
-
-    return HttpResponse("All good, don't worry about a thing :>")
-
-
-@dataclass
-class TestUser:
-    """Dummy user data"""
-
-    perms: int = 0
+@csrf_protect
+@require_http_methods(["POST"])
+def create_user(request):
+    """Secure way to create a user"""
+    try:
+        data = json.loads(request.body)
+        user = User.objects.create(**data)
+        return JsonResponse({'id': user.id}, status=201)
+    except (json.JSONDecodeError, ValidationError) as e:
+        return JsonResponse({'error': str(e)}, status=400)
 
 
-pickled_user = pickle.dumps(TestUser())
-print(pickled_user)
-encoded_user = base64.b64encode(pickled_user)
-print(encoded_user)
+def create_jwt_token(user_id, is_admin=False):
+    """Create a secure JWT token"""
+    return jwt.encode(
+        {
+            'user_id': user_id,
+            'is_admin': is_admin
+        }, 
+        settings.SECRET_KEY, 
+        algorithm='HS256'
+    )
 
-
-# No access token:
-# b'\x80\x03csecurity.views\nTestUser\nq\x00)\x81q\x01}q\x02X\x05\x00\x00\x00permsq\x03K\x00sb.'
-# b'gANjc2VjdXJpdHkudmlld3MKVGVzdFVzZXIKcQApgXEBfXECWAUAAABwZXJtc3EDSwBzYi4='
-
-
-# Admin token:
-# b'\x80\x03csecurity.views\nTestUser\nq\x00)\x81q\x01}q\x02X\x05\x00\x00\x00permsq\x03K\x01sb.'
-# b'gANjc2VjdXJpdHkudmlld3MKVGVzdFVzZXIKcQApgXEBfXECWAUAAABwZXJtc3EDSwFzYi4='
-
+@csrf_protect
+@require_http_methods(["GET"])
 def admin_index(request):
-    """Protected admin page which can be broken into by manipulating a token"""
+    """Protected admin page using secure JWT tokens"""
+    try:
+        token = request.COOKIES.get('auth_token', '')
+        if not token:
+            return HttpResponseForbidden('No access token provided')
+            
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=['HS256'])
+        
+        if payload.get('is_admin'):
+            return HttpResponse('Hello Admin')
+        
+        return HttpResponseForbidden('Not authorized')
+    except jwt.InvalidTokenError:
+        return HttpResponseForbidden('Invalid token')
 
-    token = base64.b64decode(request.COOKIES.get('silly_token', ''))
-    user = pickle.loads(token)
-
-    if user.perms == 1:
-        return HttpResponse('Hello Admin')
-
-    return HttpResponse('No access')
-
-
-# http://127.0.0.1:8000/security/search?query=%3Cscript%3Enew%20Image().src=%22http://127.0.0.1:8000/security/log?string=%22.concat(document.cookie)%3C/script%3E
+@csrf_protect
+@require_http_methods(["GET"])
 def search(request):
-    """Search functionality prone to XSS"""
+    """Secure search functionality with XSS protection"""
+    form = SearchForm(request.GET)
+    
+    if not form.is_valid():
+        return JsonResponse({'error': 'Invalid search query'}, status=400)
+        
+    query = form.cleaned_data['query']
+    
+    # Always escape user input to prevent XSS
+    safe_query = escape(query)
+    
+    return JsonResponse({
+        'query': safe_query,
+        'results': []  # Add your actual search logic here
+    })
 
-    query = request.GET.get('query', '')
-
-    response = HttpResponse(f"Query: {query}")
-
-    # Override browser's protection, if exsits
-    response['X-XSS-Protection'] = 0
-
-    return response
-
+@csrf_protect
+@require_http_methods(["GET"])
 def log(request):
-    """Just print whatever was received"""
-    string = request.GET.get('string', '')
-
-    print(string)
-
-    return HttpResponse()
+    """Secure logging endpoint"""
+    form = SearchForm(request.GET)
+    
+    if not form.is_valid():
+        return JsonResponse({'error': 'Invalid log data'}, status=400)
+        
+    # Log safely - avoid printing raw user input
+    safe_string = escape(form.cleaned_data['query'])
+    print(f"Logged (sanitized): {safe_string}")
+    
+    return HttpResponse('Logged successfully')
